@@ -1,0 +1,23 @@
+channels:
+  - name: "тревога"
+    username: "thsbshsge"
+    enabled: true
+    trigger_scenario: true
+    keywords:
+      - "тревога"
+      - "срочно"
+      - "фиксации БПЛА"
+    exclude_keywords:
+      - "не наблюдаем"
+      - "по обстановке тихо"
+      - "незамедлительно сообщим"
+      - "Отбой"
+
+  - name: "Радар Питер"
+    username: "radar_peterburg"
+    enabled: true
+    trigger_scenario: true
+    keywords:
+      - "внимание"
+      - "угроза"
+    exclude_keywords: []

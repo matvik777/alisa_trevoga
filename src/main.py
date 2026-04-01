@@ -1,13 +1,10 @@
-from alisa_api import run_scenario, AlisaAPIError
+import asyncio
+
+from telegram_listener import start_listener
 
 
 def main() -> None:
-    try:
-        result = run_scenario()
-        print("Scenario started successfully")
-        print(result)
-    except AlisaAPIError as e:
-        print(f"Error: {e}")
+    asyncio.run(start_listener())
 
 
 if __name__ == "__main__":
