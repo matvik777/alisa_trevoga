@@ -5,10 +5,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from telethon import TelegramClient
+from telethon import TelegramClient, connection
 
 from config import settings, channels_config, rules_config, schedule_config
 from matcher import match_rule
+from mtproxy_loader import load_cached_proxy, load_mtproxies, save_cached_proxy
 from router import route_alert
 from state_store import (
     get_last_seen_id,
@@ -25,27 +26,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def build_client() -> TelegramClient:
-    if settings.telegram_api_id == 0:
-        raise ValueError("TELEGRAM_API_ID is empty or invalid")
-
-    if not settings.telegram_api_hash:
-        raise ValueError("TELEGRAM_API_HASH is empty")
-
-    return TelegramClient(
-        settings.telegram_session_name,
-        settings.telegram_api_id,
-        settings.telegram_api_hash,
-    )
-
-
 def get_enabled_channels() -> list[dict[str, Any]]:
     return [channel for channel in channels_config if channel.get("enabled", True)]
 
 
 def find_rule_by_name(rule_name: str) -> dict[str, Any] | None:
     for rule in rules_config:
-        if rule.get("name") == rule_name:
+        if rule.get("name") == rule_name and rule.get("enabled", True):
             return rule
     return None
 
@@ -65,7 +52,72 @@ def get_poll_interval_seconds() -> int:
     return int(night_cfg.get("interval_seconds", 60))
 
 
-async def initialize_last_seen_ids(client: TelegramClient, state: dict[str, Any], channels: list[dict[str, Any]]) -> None:
+async def build_working_client() -> TelegramClient:
+    if settings.telegram_api_id == 0:
+        raise ValueError("TELEGRAM_API_ID is empty or invalid")
+
+    if not settings.telegram_api_hash:
+        raise ValueError("TELEGRAM_API_HASH is empty")
+
+    proxies: list[tuple[str, int, str]] = []
+
+    cached_proxy = load_cached_proxy()
+    if cached_proxy:
+        proxies.append(cached_proxy)
+
+    fresh_proxies = load_mtproxies(limit=8)
+    for proxy in fresh_proxies:
+        if proxy not in proxies:
+            proxies.append(proxy)
+
+    if not proxies:
+        raise ValueError("No MTProto proxies loaded")
+
+    last_error: Exception | None = None
+
+    for index, (host, port, secret) in enumerate(proxies, start=1):
+        logger.info("Trying MTProto proxy %s: %s:%s", index, host, port)
+
+        client = TelegramClient(
+            settings.telegram_session_name,
+            settings.telegram_api_id,
+            settings.telegram_api_hash,
+            connection=connection.ConnectionTcpMTProxyRandomizedIntermediate,
+            proxy=(host, port, secret),
+        )
+
+        try:
+            await client.start(phone=settings.telegram_phone)
+            me = await client.get_me()
+            logger.info(
+                "Connected with proxy %s | user=%s",
+                index,
+                getattr(me, "username", None) or me.id,
+            )
+            save_cached_proxy(host, port, secret)
+            return client
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Proxy %s failed | %s:%s | error=%s",
+                index,
+                host,
+                port,
+                e,
+            )
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    raise RuntimeError(f"All MTProto proxies failed. Last error: {last_error}")
+
+
+async def initialize_last_seen_ids(
+    client: TelegramClient,
+    state: dict[str, Any],
+    channels: list[dict[str, Any]],
+) -> None:
     for channel in channels:
         username = channel.get("username", "").strip()
         if not username:
@@ -78,14 +130,22 @@ async def initialize_last_seen_ids(client: TelegramClient, state: dict[str, Any]
         messages = await client.get_messages(username, limit=1)
         if messages:
             set_last_seen_id(state, username, messages[0].id)
-            logger.info("Initialized last_seen_id | channel=%s | message_id=%s", username, messages[0].id)
+            logger.info(
+                "Initialized last_seen_id | channel=%s | message_id=%s",
+                username,
+                messages[0].id,
+            )
         else:
             set_last_seen_id(state, username, 0)
 
     save_state(state)
 
 
-async def process_channel(client: TelegramClient, state: dict[str, Any], channel_config: dict[str, Any]) -> None:
+async def process_channel(
+    client: TelegramClient,
+    state: dict[str, Any],
+    channel_config: dict[str, Any],
+) -> None:
     username = channel_config.get("username", "").strip()
     if not username:
         return
@@ -109,7 +169,12 @@ async def process_channel(client: TelegramClient, state: dict[str, Any], channel
             continue
 
         text = message.raw_text or ""
-        logger.info("Checking message | channel=%s | message_id=%s | text=%s", username, message.id, text[:300])
+        logger.info(
+            "Checking message | channel=%s | message_id=%s | text=%s",
+            username,
+            message.id,
+            text[:300],
+        )
 
         for rule_name in rule_names:
             rule_config = find_rule_by_name(rule_name)
@@ -152,17 +217,16 @@ async def process_channel(client: TelegramClient, state: dict[str, Any], channel
 
 
 async def start_poller() -> None:
-    client = build_client()
-
-    await client.start(phone=settings.telegram_phone)
-    me = await client.get_me()
-    logger.info("Logged in as: %s", getattr(me, "username", None) or me.id)
+    client = await build_working_client()
 
     enabled_channels = get_enabled_channels()
     if not enabled_channels:
         raise ValueError("No enabled channels configured in config/channels.yaml")
 
-    logger.info("Polling channels: %s", [channel.get("username") for channel in enabled_channels])
+    logger.info(
+        "Polling channels: %s",
+        [channel.get("username") for channel in enabled_channels],
+    )
 
     state = load_state()
     await initialize_last_seen_ids(client, state, enabled_channels)
@@ -175,7 +239,11 @@ async def start_poller() -> None:
             try:
                 await process_channel(client, state, channel)
             except Exception as e:
-                logger.exception("Failed to process channel=%s | error=%s", channel.get("username"), e)
+                logger.exception(
+                    "Failed to process channel=%s | error=%s",
+                    channel.get("username"),
+                    e,
+                )
 
         logger.info("Sleeping for %s seconds", interval)
         await asyncio.sleep(interval)

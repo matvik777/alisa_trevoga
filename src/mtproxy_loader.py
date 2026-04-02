@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse, parse_qs
+import json
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
 PROXY_LIST_URL = "https://raw.githubusercontent.com/kort0881/telegram-proxy-collector/main/proxy_ru.txt"
+CACHE_PATH = Path(__file__).resolve().parent.parent / "state" / "mtproxy_cache.json"
 
 
 def load_mtproxies(limit: int = 10) -> list[tuple[str, int, str]]:
@@ -37,3 +40,36 @@ def load_mtproxies(limit: int = 10) -> list[tuple[str, int, str]]:
             break
 
     return proxies
+
+
+def load_cached_proxy() -> tuple[str, int, str] | None:
+    if not CACHE_PATH.exists():
+        return None
+
+    try:
+        data = json.loads(CACHE_PATH.read_text(encoding="utf-8"))
+        host = data.get("host")
+        port = int(data.get("port"))
+        secret = data.get("secret")
+        if host and port and secret:
+            return host, port, secret
+    except Exception:
+        return None
+
+    return None
+
+
+def save_cached_proxy(host: str, port: int, secret: str) -> None:
+    CACHE_PATH.parent.mkdir(exist_ok=True)
+    CACHE_PATH.write_text(
+        json.dumps(
+            {
+                "host": host,
+                "port": port,
+                "secret": secret,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
