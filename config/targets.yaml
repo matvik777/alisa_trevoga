@@ -1,0 +1,10 @@
+targets:
+  - name: "home_alisa"
+    type: "yandex_scenario"
+    enabled: true
+    scenario_id: "PASTE_HOME_SCENARIO_ID_HERE"
+
+  - name: "parents_alisa"
+    type: "yandex_scenario"
+    enabled: false
+    scenario_id: "PASTE_PARENTS_SCENARIO_ID_HERE"

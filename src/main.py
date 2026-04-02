@@ -1,10 +1,10 @@
 import asyncio
 
-from telegram_listener import start_listener
+from telegram_poller import start_poller
 
 
 def main() -> None:
-    asyncio.run(start_listener())
+    asyncio.run(start_poller())
 
 
 if __name__ == "__main__":

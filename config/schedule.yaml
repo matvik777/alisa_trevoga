@@ -1,0 +1,10 @@
+schedule:
+  day:
+    start: "07:00"
+    end: "23:00"
+    interval_seconds: 240
+
+  night:
+    start: "23:00"
+    end: "07:00"
+    interval_seconds: 60
