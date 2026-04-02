@@ -1,11 +1,12 @@
 import logging
 from typing import Any
 
-from telethon import TelegramClient, events
+from telethon import TelegramClient, events, connection
 
 from alisa_api import run_scenario, AlisaAPIError
 from config import settings, channels_config
 from matcher import match_channel_rule
+from mtproxy_loader import load_mtproxies
 
 logging.basicConfig(
     level=logging.INFO,
@@ -13,20 +14,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-def build_client() -> TelegramClient:
-    if settings.telegram_api_id == 0:
-        raise ValueError("TELEGRAM_API_ID is empty or invalid")
-
-    if not settings.telegram_api_hash:
-        raise ValueError("TELEGRAM_API_HASH is empty")
-
-    return TelegramClient(
-        settings.telegram_session_name,
-        settings.telegram_api_id,
-        settings.telegram_api_hash,
-    )
 
 
 def get_enabled_channels() -> list[dict[str, Any]]:
@@ -58,12 +45,58 @@ def find_channel_config_by_username(
     return None
 
 
-async def start_listener() -> None:
-    client = build_client()
+async def build_working_client() -> TelegramClient:
+    if settings.telegram_api_id == 0:
+        raise ValueError("TELEGRAM_API_ID is empty or invalid")
 
-    await client.start(phone=settings.telegram_phone)
-    me = await client.get_me()
-    logger.info("Logged in as: %s", getattr(me, "username", None) or me.id)
+    if not settings.telegram_api_hash:
+        raise ValueError("TELEGRAM_API_HASH is empty")
+
+    proxies = load_mtproxies(limit=8)
+    if not proxies:
+        raise ValueError("No MTProto proxies loaded")
+
+    last_error: Exception | None = None
+
+    for index, (host, port, secret) in enumerate(proxies, start=1):
+        logger.info("Trying MTProto proxy %s: %s:%s", index, host, port)
+
+        client = TelegramClient(
+            settings.telegram_session_name,
+            settings.telegram_api_id,
+            settings.telegram_api_hash,
+            connection=connection.ConnectionTcpMTProxyRandomizedIntermediate,
+            proxy=(host, port, secret),
+        )
+
+        try:
+            await client.start(phone=settings.telegram_phone)
+            me = await client.get_me()
+            logger.info(
+                "Connected with proxy %s | user=%s",
+                index,
+                getattr(me, "username", None) or me.id,
+            )
+            return client
+        except Exception as e:
+            last_error = e
+            logger.warning(
+                "Proxy %s failed | %s:%s | error=%s",
+                index,
+                host,
+                port,
+                e,
+            )
+            try:
+                await client.disconnect()
+            except Exception:
+                pass
+
+    raise RuntimeError(f"All MTProto proxies failed. Last error: {last_error}")
+
+
+async def start_listener() -> None:
+    client = await build_working_client()
 
     enabled_channels = get_enabled_channels()
     channel_usernames = get_channel_usernames(enabled_channels)
