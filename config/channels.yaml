@@ -6,3 +6,10 @@ channels:
       - "kirishi_alert"
     targets:
       - "home_alisa"
+  - name: "Тревога"
+    username: "thsbshsge"
+    enabled: true
+    rules:
+      - "kirishi_alert"
+    targets:
+      - "home_alisa"

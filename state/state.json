@@ -1,6 +1,9 @@
 {
   "last_seen_ids": {
-    "radar_peterburg": 978
+    "radar_peterburg": 1027,
+    "thsbshsge": 44
   },
-  "last_triggered_at": {}
+  "last_triggered_at": {
+    "kirishi_alert": "2026-04-07T20:13:51.469752+00:00"
+  }
 }
