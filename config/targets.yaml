@@ -2,9 +2,9 @@ targets:
   - name: "home_alisa"
     type: "yandex_scenario"
     enabled: true
-    scenario_id: "PASTE_HOME_SCENARIO_ID_HERE"
+    scenario_env: "YANDEX_SCENARIO_ID"
 
   - name: "parents_alisa"
     type: "yandex_scenario"
     enabled: false
-    scenario_id: "PASTE_PARENTS_SCENARIO_ID_HERE"
+    scenario_env: "YANDEX_PARENTS_SCENARIO_ID"

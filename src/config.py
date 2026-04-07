@@ -23,6 +23,7 @@ class AppSettings:
     telegram_phone: str
     telegram_session_name: str
     yandex_access_token: str
+    yandex_scenario_id: str
 
     @classmethod
     def from_env(cls) -> "AppSettings":
@@ -32,6 +33,7 @@ class AppSettings:
             telegram_phone=os.getenv("TELEGRAM_PHONE", ""),
             telegram_session_name=os.getenv("TELEGRAM_SESSION_NAME", "telegram_monitor"),
             yandex_access_token=os.getenv("YANDEX_ACCESS_TOKEN", ""),
+            yandex_scenario_id=os.getenv("YANDEX_SCENARIO_ID", ""),
         )
 
 

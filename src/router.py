@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any
 
-from alisa_api import run_scenario
+from alisa_api import AlisaAPIError, run_scenario
 from config import targets_config
 from state_store import get_last_triggered_at, set_last_triggered_at_now
 
@@ -31,6 +32,21 @@ def is_cooldown_active(state: dict[str, Any], rule_name: str, cooldown_minutes: 
 
     delta_seconds = (now - previous).total_seconds()
     return delta_seconds < cooldown_minutes * 60
+
+
+def resolve_target_scenario_id(target: dict[str, Any]) -> str:
+    target_name = str(target.get("name", "unknown_target")).strip()
+    scenario_env = str(target.get("scenario_env", "")).strip()
+
+    if scenario_env:
+        scenario_id = os.getenv(scenario_env, "").strip()
+        if scenario_id:
+            return scenario_id
+        raise AlisaAPIError(
+            f"Environment variable '{scenario_env}' is empty for target '{target_name}'",
+        )
+
+    return str(target.get("scenario_id", "")).strip()
 
 
 def route_alert(
@@ -62,7 +78,7 @@ def route_alert(
 
         target_type = target.get("type")
         if target_type == "yandex_scenario":
-            scenario_id = target.get("scenario_id", "")
+            scenario_id = resolve_target_scenario_id(target)
             result = run_scenario(scenario_id)
             logger.info(
                 "Target executed | target=%s | type=%s | result=%s | context=%s",
